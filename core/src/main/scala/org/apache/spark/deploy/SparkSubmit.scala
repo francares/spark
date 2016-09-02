@@ -70,7 +70,8 @@ object SparkSubmit {
   private val STANDALONE = 2
   private val MESOS = 4
   private val LOCAL = 8
-  private val ALL_CLUSTER_MGRS = YARN | STANDALONE | MESOS | LOCAL
+  private val KUBERNETES = 16
+  private val ALL_CLUSTER_MGRS = YARN | STANDALONE | MESOS | KUBERNETES | LOCAL
 
   // Deploy modes
   private val CLIENT = 1
@@ -240,6 +241,7 @@ object SparkSubmit {
       case m if m.startsWith("spark") => STANDALONE
       case m if m.startsWith("mesos") => MESOS
       case m if m.startsWith("local") => LOCAL
+      case m if m.startsWith("k8s") => KUBERNETES
       case _ =>
         printErrorAndExit("Master must either be yarn or start with spark, mesos, local")
         -1
@@ -284,6 +286,7 @@ object SparkSubmit {
     }
     val isYarnCluster = clusterManager == YARN && deployMode == CLUSTER
     val isMesosCluster = clusterManager == MESOS && deployMode == CLUSTER
+    val isKubernetesCluster = clusterManager == KUBERNETES && deployMode == CLUSTER
 
     // Resolve maven dependencies if there are any and add classpath to jars. Add them to py-files
     // too for packages that include Python code
@@ -592,6 +595,22 @@ object SparkSubmit {
     if (isMesosCluster) {
       assert(args.useRest, "Mesos cluster mode is only supported through the REST submission API")
       childMainClass = "org.apache.spark.deploy.rest.RestSubmissionClient"
+      if (args.isPython) {
+        // Second argument is main class
+        childArgs += (args.primaryResource, "")
+        if (args.pyFiles != null) {
+          sysProps("spark.submit.pyFiles") = args.pyFiles
+        }
+      } else {
+        childArgs += (args.primaryResource, args.mainClass)
+      }
+      if (args.childArgs != null) {
+        childArgs ++= args.childArgs
+      }
+    }
+
+    if (isKubernetesCluster) {
+      childMainClass = "org.apache.spark.deploy.k8s.Client"
       if (args.isPython) {
         // Second argument is main class
         childArgs += (args.primaryResource, "")
